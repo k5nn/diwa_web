@@ -1,0 +1,42 @@
+body {
+	display: flex;
+	flex-direction: row;
+}
+
+#calls {
+	display: flex;
+	flex-direction: column;
+	border: 1px solid black;
+	margin: 25px;
+	width: 20vw;
+	height: 90vh;
+	overflow-y : auto;
+}
+
+#chat {
+	display: flex;
+	flex-direction: column;
+	border: 1px solid black;
+	margin: 25px;
+	width: 70vw;
+	height: 90vh;
+}
+
+#chat_log {
+	display: flex;
+	flex-direction: column;
+	border: 1px solid black;
+	margin: 10px;
+	height: 70%;
+}
+
+#chat_box {
+	display: flex;
+	flex-direction: row;
+	border: 1px solid black;
+	margin: 10px;
+	height: 30%;
+}
+
+
+

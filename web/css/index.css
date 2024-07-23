@@ -1,0 +1,7 @@
+body {
+	display: grid;
+	grid-template-columns: 10vw [content] 80vw 10vw;
+	grid-template-rows: 5vh [content] auto;
+	font-size : 24px;
+}
+input , button { font-size: 24px; }

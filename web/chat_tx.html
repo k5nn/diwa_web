@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title></title>
+</head>
+
+<link rel="stylesheet" type="text/css" href="/css/resetter.css">
+
+<body>
+  <button id="init_call" onclick="init_call()">Init Call</button>
+  <button id="drop_call" onclick="drop_call()">Hangup</button>
+  <audio id="remoteMedia" autoplay="true"/>
+</body>
+
+ <script type="text/javascript" src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+<script type="text/javascript" src="https://unpkg.com/@telnyx/webrtc@2.9.0/lib/bundle.js"></script>
+<script src="/js/htmx.min.js"></script>
+<script src="/js/chat_tx.js"></script>
+
+</html>

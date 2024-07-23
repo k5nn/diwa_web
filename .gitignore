@@ -1,0 +1,6 @@
+node_modules
+keys.json
+server.cert
+server.key
+web/data/test_campaign/telnyx*
+web/data/test_campaign/tx/*/telnyx*

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title></title>
+</head>
+
+<link rel="stylesheet" type="text/css" href="/css/resetter.css">
+<link rel="stylesheet" type="text/css" href="/css/chat_rx.css">
+
+<body>
+  <div id="calls"></div>
+  <div id="chat">
+    <div id="chat_log"></div>
+    <div id="chat_box"></div>
+  </div>
+
+  <audio id="remoteMedia" autoplay="true"/>
+</body>
+
+<script type="text/javascript" src="https://unpkg.com/socket.io@4.7.5/client-dist/socket.io.min.js"></script>
+<script type="text/javascript" src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+<script type="text/javascript" src="https://unpkg.com/@telnyx/webrtc@2.9.0/lib/bundle.js"></script>
+<script src="/js/htmx.min.js"></script>
+<script src="/js/chat_rx.js"></script>
+
+
+</html>
