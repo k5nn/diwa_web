@@ -24,7 +24,8 @@ body {
 
 #chat_log {
 	display: flex;
-	flex-direction: column;
+	flex-direction: row;
+	justify-content: space-around;
 	border: 1px solid black;
 	margin: 10px;
 	height: 70%;
@@ -36,6 +37,12 @@ body {
 	border: 1px solid black;
 	margin: 10px;
 	height: 30%;
+}
+
+.chat_instance {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-around;
 }
 
 
