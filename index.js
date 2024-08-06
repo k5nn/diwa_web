@@ -4,7 +4,9 @@ const https = require( 'https' )
 const http = require( 'http' )
 const { networkInterfaces } = require('os');
 const { v4: uuidv4 } = require('uuid');
+const { pipeline } = require('node:stream/promises');
 const WebSocket = require('ws');
+const openai = require( 'openai' )
 
 const fsPromises = fs.promises;
 
@@ -17,7 +19,7 @@ const port = 3000
 const BASE_DIR = __dirname
 const WEB_DIR = `${BASE_DIR}/web`
 const GRP_NAME = "test_campaign"
-const NGROK_DOMAIN = "https://c0b3-124-104-1-173.ngrok-free.app"
+const NGROK_DOMAIN = "https://24ff-111-90-194-58.ngrok-free.app"
 const network_info = {}
 let active_calls = {}
 let failed_calls = []
@@ -35,10 +37,10 @@ for (const name of Object.keys(nets)) {
     }
 }
 
-const sslOptions = {
-    key: fs.readFileSync( `${BASE_DIR}/server.key` ),
-    cert: fs.readFileSync( `${BASE_DIR}/server.cert` )
-};
+// const sslOptions = {
+//     key: fs.readFileSync( `${BASE_DIR}/server.key` ),
+//     cert: fs.readFileSync( `${BASE_DIR}/server.cert` )
+// };
 
 const async_file_check = async (path) => {
     try {
@@ -83,7 +85,7 @@ app.get( '/rooms/:groupId/:roomId' , async ( req , res ) => {
 
     if ( token.hasOwnProperty( "err" ) ) { 
         console.log( token.err )
-        return res.status( 404 ) 
+        return res.status( 404 )
     }
 
     res.cookie( "telnyx_sip" , treat( self_cred.data.sip_username ) , { expires : 0 } )
@@ -98,15 +100,15 @@ app.post( "/telnyx/events" , async ( req , res ) => {
     const treat = ( dirty_sip ) => { return dirty_sip.split( "@" )[ 0 ] }
     const data = req.body.data
     const meta = req.body.meta
+    const b64buffer = Buffer.from( data.payload.client_state , "base64" )
+    const json_client_state = JSON.parse( b64buffer.toString( "utf-8" ) )
     const caller_fpath = `${WEB_DIR}/data/${json_client_state.groupId}/tx/${json_client_state.roomId}/telnyx_credentials.json`
     const receiver_fpath = `${WEB_DIR}/data/${json_client_state.groupId}/telnyx_credentials.json`
+    const caller_cred = JSON.parse( await fsPromises.readFile( caller_fpath ) )
+    const receiver_cred = JSON.parse( await fsPromises.readFile( receiver_fpath ) )
     let payload = data.payload
-    let b64buffer = Buffer.from( payload.client_state , "base64" )
-    let json_client_state = JSON.parse( b64buffer.toString( "utf-8" ) )
     let fetch_opts = {}
     let action = ""
-    let caller_cred = JSON.parse( await fsPromises.readFile( caller_fpath ) )
-    let receiver_cred = JSON.parse( await fsPromises.readFile( receiver_fpath ) )
 
     payload.from = ( payload.from == undefined ) ?  treat( caller_cred.data.sip_username ) : treat( payload.from )
     payload.to = ( payload.to == undefined ) ? treat( receiver_cred.data.sip_username ) : treat( payload.to )
@@ -118,10 +120,7 @@ app.post( "/telnyx/events" , async ( req , res ) => {
         call_control_id : payload.call_control_id ,
         client_state : json_client_state ,
         from : payload.from ,
-        to : payload.to ,
-        elevenlabs_voice : null ,
-        assistant_id : null ,
-        assistant_thread : null
+        to : payload.to
     }
 
     if ( data.event_type == "call.initiated" ) {
@@ -142,16 +141,14 @@ app.post( "/telnyx/events" , async ( req , res ) => {
         fetch_opts.url = `https://api.telnyx.com/v2/calls/${payload.call_control_id}/actions/playback_start`
         action = "playback_answer"
         broadcast( JSON.stringify( { rx : payload.to , data : transcript.toString() , msg_name : "ai_chat" } ) )
-        fsPromises.writeFile( transcript_file , JSON.stringify( { data : [ transcript.toString() ] } ) , null , "\t" )
+        fsPromises.writeFile( transcript_file , JSON.stringify( { data : [ `${transcript.toString()}` ] } ) , null , "\t" )
     }
 
     if ( data.event_type == "call.playback.started" ) {
-        if ( active_calls.hasOwnProperty( payload.from ) ) { active_calls[ payload.from ].state = payload }
         broadcast( JSON.stringify( { rx : payload.to , data : ret_data , msg_name : "ai_turn" } ) )
     }
 
     if ( data.event_type == "call.playback.ended" ) {
-        if ( active_calls.hasOwnProperty( payload.from ) ) { active_calls[ payload.from ].state = payload }
         broadcast( JSON.stringify( { rx : payload.from , data : ret_data , msg_name : "start_vad" } ) )
     }
 
@@ -163,7 +160,7 @@ app.post( "/telnyx/events" , async ( req , res ) => {
     if ( ! fetch_opts.url ) { return 0 }
 
     fetch_telnyx( fetch_opts )
-        .then( (json) => {
+        .then( async (json) => {
             if ( json.errors ) {
                 console.log( fetch_opts )
                 console.log( json )
@@ -173,7 +170,15 @@ app.post( "/telnyx/events" , async ( req , res ) => {
                 broadcast( JSON.stringify ( { rx : payload.to , data : json.errors , msg_name : "call_error" } ) )
             } else {
                 if ( action == "answer" ) {
-                    active_calls[ payload.from ] = ret_data
+                    // active_calls[ payload.from ].state = ret_data
+                    const proj = JSON.parse( await fsPromises.readFile( `${WEB_DIR}/data/${json_client_state.groupId}/config.json` ) )
+                    const choice = Math.floor( Math.random() * proj.ELEVENLABS_VOICES.length ) - 1
+                    active_calls[ payload.from ] = {
+                        question_cnt : 0 ,
+                        assistant_id : null ,
+                        thread_id : null ,
+                        elevenlabs_vid : proj.ELEVENLABS_VOICES[ ( choice < 0 ) ? 0 : choice ] ,
+                    }
                     broadcast( JSON.stringify( { rx : payload.to , data : ret_data , msg_name : "call_answered" } ) )
                 }
             }
@@ -209,49 +214,128 @@ wss.on( 'connection' , ( ws ) => {
         const json = JSON.parse( e.toString( "utf-8" ) )
         let client_state = null
 
-        if ( json.data.hasOwnProperty( "client_state" ) ) {
-            client_state = json.data.client_state
-        }
-        
-        console.log( json )
+        if ( json.data.hasOwnProperty( "client_state" ) ) { client_state = json.data.client_state }
 
         if ( json.msg_name == "" ) { return console.log( "msg_name is needed" ) }
 
+        // if ( active_calls.hasOwnProperty( json.data.from ) ) { return console.log( "call is no longer available" ) }
+
         if ( json.msg_name == "recording_end" ) {
 
-            const transcript_file = `${WEB_DIR}/data/${client_state.groupId}/tx/${client_state.roomId}/transcript.json`
-            const transcript_curr = JSON.parse( await fsPromises.readFile( transcript_file ) )
             const audioBuffer = Buffer.from(json.audiob64, "base64");
-            const audio_path = `${WEB_DIR}/data/${client_state.groupId}/tx/${client_state.roomId}/answer_${transcript_curr.data.length}.wav`
+            const qcnt = active_calls[ json.data.from ].question_cnt
+            const audio_path = `${WEB_DIR}/data/${client_state.groupId}/tx/${client_state.roomId}/answer_${qcnt}.wav`
 
             fs.writeFile( audio_path , audioBuffer , ( err ) => {
                 if ( err ) { return console.log( err ) }
 
-                // fetch_openai_transcript({ input_file : audio_path })
-                //     .then( async ( json ) => {
-                //         const instruct_file = `${WEB_DIR}/data/${client_state.groupId}/Instructions.txt`
-                //         let instruct_curr = await fs.Promises.readFile( instruct_file )
-                //         let assistant_opts = {
-                //             ids : client_state
-                //         }
+                fetch_openai_transcript(audio_path)
+                    .then( async ( transcript ) => {
+                        const instruct_file = `${WEB_DIR}/data/${client_state.groupId}/Instructions.txt`
+                        const instruct_curr = Buffer.from( await fsPromises.readFile( instruct_file ) ).toString()
+                        const transcript_file = `${WEB_DIR}/data/${client_state.groupId}/tx/${client_state.roomId}/transcript.json`
+                        const transcript_json = JSON.parse( await fsPromises.readFile( transcript_file ) )
+                        const code_regexp = new RegExp( "^<\\*CD_" )
+                        const gpt_model = "gpt-4o"
+                        let assistant_reply = ""
 
-                //         transcript_curr.push( json.text )
-                //         fsPromises.writeFile( transcript_file , JSON.stringify( transcript_curr ) , null , "\t" )
+                        transcript_json.data.push( `${transcript.text}` )
+                        broadcast( JSON.stringify( { rx : json.data.to , data : transcript.text , msg_name : "human_chat" } ) )
 
-                //         broadcast( JSON.stringify( { rx : json.data.to , data : json.text , msg_name : "human_chat" } ) )
+                        if ( active_calls[ json.data.from ].assistant_id == null ) {
+                            const assistant_opts = {
+                                model : gpt_model ,
+                                name : `${client_state.groupId}_${client_state.roomId.split( "-" )[ 0 ]}` ,
+                                instructions : instruct_curr ,
+                                ids : client_state ,
+                                action : "create_assistant"
+                            }
+                            active_calls[ json.data.from ].assistant_id = await fetch_openai_assistant( assistant_opts )
+                        }
 
-                //         if ( json.assistant_id == null ) {
+                        if ( active_calls[ json.data.from ].thread_id == null ) {
+                            let messages = []
+                            for (var i = 0; i < transcript_json.data.length; i++) {
+                                messages.push( { role : ( i % 2 == 0 ) ? "assistant" : "user" , content : transcript_json.data[ i ] } )
+                            }
+                            let assistant_opts = {
+                                assistant_id : active_calls[ json.data.from ].assistant_id ,
+                                thread_msgs : messages , 
+                                ids : client_state ,
+                                action : "create_and_run"
+                            }
+                            try {
+                                const res = await fetch_openai_assistant( assistant_opts )
+                                active_calls[ json.data.from ].thread_id = res.thread_id
+                                assistant_reply = res.reply
+                            } catch  {
+                                assistant_reply = null
+                            }
 
-                //             assistant_opts.body = JSON.stringify({
-                //                 model : "gpt-4o" ,
-                //                 name : "campaign assistant" ,
-                //                 instructions : instruct_curr ,
-                //             })
+                        } else {
+                            let assistant_opts = {
+                                thread_id : active_calls[ json.data.from ].thread_id ,
+                                message : { role : "user" , content : transcript_json.data[ transcript_json.data.length - 1 ] } ,
+                                ids : client_state ,
+                                action : "create_message"
+                            }
+                            await fetch_openai_assistant( assistant_opts )
 
-                //             // fetch_openai_assistant( assistant_opts )
-                //         }
+                            assistant_opts = {
+                                thread_id : active_calls[ json.data.from ].thread_id ,
+                                assistant_id : active_calls[ json.data.from ].assistant_id ,
+                                ids : client_state ,
+                                action : "create_run"
+                            }
+                            try {
+                                assistant_reply = await fetch_openai_assistant( assistant_opts )
+                            } catch {
+                                assistant_reply = null
+                            }
+                        }
 
-                //     })
+                        if ( assistant_reply == null ) {
+                            console.log( "ask for assistance" )
+                            return
+                        }
+
+                        active_calls[ json.data.from ].question_cnt += 1
+                        transcript_json.data.push( `${assistant_reply}` )
+                        fsPromises.writeFile( transcript_file , JSON.stringify( transcript_json ) , null , "\t" )
+                        broadcast( JSON.stringify( { rx : json.data.to , data : assistant_reply , msg_name : "ai_chat" } ) )
+
+                        const elevenlabs_opts = {
+                            voice_id : active_calls[ json.data.from ].elevenlabs_vid ,
+                            body : JSON.stringify({
+                                text : assistant_reply ,
+                                model : "eleven_monolingual_v2"
+                            }) ,
+                            outpath : `${WEB_DIR}/data/${client_state.groupId}/tx/${client_state.roomId}/ai_answer.mp3`
+                        }
+
+                        await fetch_elevenlabs( elevenlabs_opts )
+
+                        const telnyx_opts = {
+                            body : JSON.stringify({
+                                audio_url: `${NGROK_DOMAIN}/data/${client_state.groupId}/tx/${client_state.roomId}/ai_answer.mp3`,
+                                loop: 1 ,
+                                stop : "current" ,
+                                client_state: Buffer.from( JSON.stringify( client_state ) ).toString( "base64" )   ,
+                            }) ,
+                            url : `https://api.telnyx.com/v2/calls/${json.data.call_control_id}/actions/playback_start`
+                        }
+
+                        fetch_telnyx( telnyx_opts )
+
+                        if ( code_regexp.test( assistant_reply ) ) { console.log( `Guard Rail ${assistant_reply} triggered` ) }
+
+                        // if ( code_regexp.test( assistant_reply ) ) {
+                        //     console.log( `Guard Rail ${assistant_reply} Triggered` )
+                        // } else {
+
+                        // }
+
+                    })
             })
 
         } else if ( json.msg_name == "human_turn" ) {
@@ -289,41 +373,78 @@ const fetch_telnyx = async( opts ) => {
     return res.json()
 }
 
-const fetch_openai_transcript = async( opts ) => {
+const fetch_openai_transcript = async( audio_path ) => {
     const obj = JSON.parse( await fsPromises.readFile( `${BASE_DIR}/keys.json` ) )
-    let fetch_opts = {
-        method : "POST" ,
-        headers : {
-            "Content-Type" : "multipart/form-data" ,
-            "Authorization" : `Bearer ${obj.ELEVENLABS_API_KEY}`
-        } ,
-        body : JSON.stringify({
-            file : opts.input_file ,
-            model : "whisper-1"
-        })
-    }
-    let res = await fetch( "https://api.openai.com/v1/audio/transcriptions" , fetch_opts )
+    const openai_client = new openai({ apiKey : obj.OPENAI_API_KEY })
 
-    return res.json()
+    let transcription = await openai_client.audio.transcriptions.create({
+        file : fs.createReadStream( audio_path ) ,
+        model : "whisper-1"
+    })
+
+    return transcription
 }
 
 const fetch_openai_assistant = async( opts ) => {
     const obj = JSON.parse( await fsPromises.readFile( `${BASE_DIR}/keys.json` ) )
     const proj = JSON.parse( await fsPromises.readFile( `${WEB_DIR}/data/${opts.ids.groupId}/config.json` ) )
-    let fetch_opts = {
+    const openai_client = new openai({ 
+        apiKey : obj.OPENAI_API_KEY ,
+        project : proj.OPENAI_PROJECT
+    })
+
+    if ( opts.action == "create_assistant" ) {
+        const myAssistant = await openai_client.beta.assistants.create({
+            instructions: opts.instructions ,
+            name: opts.name,
+            model: opts.model,
+        })
+        return myAssistant.id
+    } else if ( opts.action == "create_and_run" ) {
+        let assistant_reply = ""
+        const stream = await openai_client.beta.threads.createAndRun({
+            assistant_id: opts.assistant_id,
+            thread: {
+                messages: opts.thread_msgs
+            },
+            stream: true
+        })
+
+        for await (const event of stream) {
+            console.log( event )
+            if ( event.event == "thread.message.completed" ) { assistant_reply = event.data.content[ 0 ].text.value }
+            if ( event.event == "thread.run.completed" ) { return { thread_id : event.data.thread_id , reply : assistant_reply } }
+        }
+    } else if ( opts.action == "create_message" ) {
+        const threadMessages = await openai_client.beta.threads.messages.create( opts.thread_id, opts.message )
+    } else if ( opts.action == "create_run" ) {
+        let assistant_reply = ""
+        const stream = await openai_client.beta.threads.runs.create( opts.thread_id, { assistant_id: opts.assistant_id, stream: true } );
+        for await ( const event of stream ) {
+            if ( event.event == "thread.message.completed" ) { assistant_reply = event.data.content[ 0 ].text.value }
+            if ( event.event == "thread.run.completed" ) { return assistant_reply }
+        }
+    }
+}
+
+const fetch_elevenlabs = async( opts ) => {
+    const obj = JSON.parse( await fsPromises.readFile( `${BASE_DIR}/keys.json` ) )
+    const CHUNK_SIZE = 1024
+    const fetch_opts = {
         method : "POST" ,
         headers : {
+            "Accept" : "audio/mpeg" ,
             "Content-Type" : "application/json" ,
-            "Authorization" : `Bearer ${obj.OPENAI_API_KEY}` ,
-            "OpenAI-Beta" : "assistants=v2" ,
-            "OpenAI-Project" : proj.OPENAI_PROJECT
+            "xi-api-key" : obj.ELEVENLABS_API_KEY
         } ,
         body : opts.body
     }
-    let res = await fetch( opts.url , fetch_opts )
+    const res = await fetch( `https://api.elevenlabs.io/v1/text-to-speech/${opts.voice_id}` , fetch_opts )
 
-    return res.json()
-
+    await pipeline(
+        res.body ,
+        fs.createWriteStream( opts.outpath )
+    )
 }
 
 const telnyx_token = async( params ) => {

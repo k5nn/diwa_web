@@ -133,26 +133,33 @@ document.addEventListener( 'readystatechange' , async ( e ) => {
 		});
 		vad.MicVAD.new()
 	} else if ( e.target.readyState === "complete"  ) {
-		await waitForOpenConnection( ws )
+
+		waitForOpenConnection( ws )
+			.then( () => {
+				document.querySelector( "body" ).style.display = "flex"
+			})
+
 		telnyx_client.remoteElement = "remoteMedia"
 		telnyx_client.connect()
+
+		ws.addEventListener( "message" , ( e ) => {
+
+			if ( e.data == "" ) { return false }
+
+			const json = JSON.parse( e.data )
+			console.log( json )
+
+			if ( json.rx == sessionStorage.getItem( "telnyx_sip" ) ) {
+
+				if ( json.msg_name == "start_vad" ) {
+					init_vad( 3 , json.data )
+				}
+
+			}
+		})
 	}
 
 })
 
-ws.addEventListener( "message" , ( e ) => {
 
-	if ( e.data == "" ) { return false }
-
-	const json = JSON.parse( e.data )
-	console.log( json )
-
-	if ( json.rx == sessionStorage.getItem( "telnyx_sip" ) ) {
-
-		if ( json.msg_name == "start_vad" ) {
-			init_vad( 5 , json.data )
-		}
-
-	}
-})
 
