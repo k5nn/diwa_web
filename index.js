@@ -54,10 +54,11 @@ app.use(express.json()) // for parsing application/json
 
 app.get( '/rooms/:groupId' , ( req , res ) => {
     const params = req.params
+    const uuid_gen = uuidv4()
 
-    fs.mkdir( `${WEB_DIR}/data/${params.groupId}/tx/${chat_uuid}`, { recursive : true } , ( err , data ) => {
+    fs.mkdir( `${WEB_DIR}/data/${params.groupId}/tx/${uuid_gen}`, { recursive : true } , ( err , data ) => {
         if ( err ) { 
-            console.error( `[MKDIR] ${WEB_DIR}/data/${params.groupId}/tx/${chat_uuid} failed` ); 
+            console.error( `[MKDIR] ${WEB_DIR}/data/${params.groupId}/tx/${uuid_gen} failed` ); 
             return res.redirect( req.originalUrl ) 
         }
 
@@ -73,7 +74,7 @@ app.get( '/rooms/:groupId' , ( req , res ) => {
                     return res.status( 500 )
                 }
 
-                return res.redirect( `/rooms/${params.groupId}/${uuidv4()}` )
+                return res.redirect( `/rooms/${params.groupId}/${uuid_gen}` )
             })
         })
     })
@@ -470,14 +471,10 @@ const fetch_elevenlabs = async( opts ) => {
 
 const main = async () => {
 
-    fs.readFile( `${BASE_DIR}/keys.json` , ( err , data ) => {
-        if ( err ) { console.log( "where the keys at?" ); return 1 }
+    await fs.readFile( `${BASE_DIR}/keys.json` , ( err , data ) => {
+        if ( err ) { console.log( "where the keys at?" ); process.exit( 1 ) }
 
         keys = JSON.parse( data.toString( "utf-8" ) )
-    })
-
-    fs.exists( `${BASE_DIR}/receiver_candidates.json` , ( exists ) => {
-        if ( exists ) { console.log( "generating ice candidates" ) }
     })
 
     server.listen( port, "0.0.0.0" , () => {

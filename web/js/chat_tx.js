@@ -1,7 +1,4 @@
 let ws = null
-let b64_str = ""
-let t0 = new Date()
-let sourceBuffer = null
 let last_ws_event = ""
 let audio_state = {
 	ctx : new (window.AudioContext || window.webkitAudioContext)({ sampleRate : 44100 }) ,
@@ -89,17 +86,6 @@ const waitForOpenConnection = (socket) => {
     })
 }
 
-const sendMessage = async (socket, msg) => {
-    if (socket.readyState !== socket.OPEN) {
-        try {
-            await waitForOpenConnection(socket)
-            socket.send(msg)
-        } catch (err) { console.error(err) }
-    } else {
-        socket.send(msg)
-    }
-}
-
 const start_session = () => {
 	document.querySelector( "audio" ).play()
 }
@@ -111,7 +97,9 @@ const end_session = () => {
 			body : JSON.stringify( { group : sessionStorage.getItem( "groupId" ) , from : sessionStorage.getItem( "roomId" ) } ) ,
 			header : { "content-type" : "application/json" }
 		} 
-	).then( myvad.pause() )
+	)
+	myvad.pause()
+	document.querySelector( "#state" ).innerHTML = `Listening : ${myvad.listening}`
 }
 
 document.addEventListener( 'readystatechange' , async ( e ) => {
@@ -129,6 +117,7 @@ document.addEventListener( 'readystatechange' , async ( e ) => {
 			let myvad = null
 			let audio_elem = document.querySelector( "audio" )
 			let b64_src_queue = []
+			let t0 = null
 
 			const handleSpeechEnd = (audio) => {
 				const wavBuffer = vad.utils.encodeWAV(audio)
@@ -141,8 +130,7 @@ document.addEventListener( 'readystatechange' , async ( e ) => {
 		    		msg_name: "recording_end"
 		    	}
 		    	ws.send( JSON.stringify( ws_msg ) )
-		        // sendMessage(ws, JSON.stringify( ws_msg ));
-		        t0 = t0.getTime()
+		        t0 = Date.now()
 		        myvad.pause();
 		        document.querySelector( "#state" ).innerHTML = `Listening : ${myvad.listening}`
 			};
@@ -190,6 +178,11 @@ document.addEventListener( 'readystatechange' , async ( e ) => {
 						audio_state.queue.push( json.audio_b64 ) 
 
 						if (audio_state.isPlaying == false) {
+							const rtime = getDateDifference( t0 , Date.now() )
+							document.querySelector( "#system" ).innerHTML = `
+							Response time was 
+							${rtime.days} days ${rtime.hours} hours ${rtime.minutes} minutes ${rtime.seconds}
+							`
 							play_chunk( audio_state.queue.shift() )
 						}
 					}
