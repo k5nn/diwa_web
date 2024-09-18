@@ -9,19 +9,16 @@
 <link rel="stylesheet" type="text/css" href="/css/resetter.css">
 <link rel="stylesheet" type="text/css" href="/css/chat_tx.css">
 
-<body display="hidden">
-  <button id="init_call" onclick="init_call()">Init Call</button>
-  <button id="drop_call" onclick="drop_call()">Hangup</button>
-  <button id="trigger_custom" onclick="trigger_custom()">Trigger Custom</button>
+<body style="display: none;">
   <div id="state"></div>
-  <audio id="remoteMedia" autoplay="true"/>
+  <button onclick="start_session()">Start Session</button>
+  <button onclick="end_session()">End Session</button>
+  <button onclick="trigger_custom()">custom</button>
+  <audio></audio>
 </body>
 
-<script type="text/javascript" src="https://unpkg.com/socket.io@4.7.5/client-dist/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad/dist/index.browser.js"></script>
-<script type="text/javascript" src="https://unpkg.com/@telnyx/webrtc@2.9.0/lib/bundle.js"></script>
-<script src="/js/adapter.js"></script>
 <script src="/js/htmx.min.js"></script>
 <script src="/js/chat_tx.js"></script>
 
